@@ -1,0 +1,8 @@
+# 运行时依赖（Render 部署用；pytest/ruff 等开发依赖不需要放上来）
+fastapi>=0.115
+uvicorn[standard]>=0.30
+pandas>=2.2
+openpyxl>=3.1
+jieba>=0.42
+# FastAPI 处理文件上传（UploadFile）必须有这个包，否则 /api/analyze 会报错
+python-multipart>=0.0.9

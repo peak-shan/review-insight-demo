@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>亚马逊评论关键词看板</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f4f6fa;color:#192539;font:16px/1.6 system-ui,sans-serif}main{max-width:1100px;margin:48px auto;padding:0 24px}.eyebrow{color:#5267bf;font-size:12px;font-weight:700;letter-spacing:2px}h1{font-size:32px;margin:8px 0}p{color:#657185}.panel{background:white;border:1px solid #e3e8f0;border-radius:16px;padding:26px;margin:24px 0;box-shadow:0 6px 24px #172d5005}form{display:flex;gap:16px;align-items:center;flex-wrap:wrap}input{max-width:100%;padding:12px;border:1px dashed #a6b3c8;border-radius:8px;flex:1}button{background:#3458d4;color:white;border:0;padding:14px 24px;border-radius:8px;font-size:15px;cursor:pointer}button:disabled{opacity:.5;cursor:wait}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.stat{background:white;padding:20px;border:1px solid #e3e8f0;border-radius:12px}.stat span{color:#657185;font-size:14px}.stat strong{display:block;font-size:32px;margin-top:8px}.positive{color:#168361}.negative{color:#cd5050}h2{font-size:19px;margin:0}#chart{height:480px;width:100%}#status{min-height:26px;margin-bottom:0;white-space:pre-wrap;overflow-wrap:anywhere}#status[data-error=true]{color:#b83232}.note{font-size:13px}.empty{padding:110px 12px;text-align:center;color:#657185}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;padding:10px;border-bottom:1px solid #e3e8f0}td{overflow-wrap:anywhere}select{padding:8px;border:1px solid #a6b3c8;border-radius:6px;margin:12px 0}.chart-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}@media(max-width:600px){main{margin:24px auto;padding:0 16px}h1{font-size:26px}.stats{grid-template-columns:repeat(2,1fr)}.panel{padding:18px}button{width:100%}}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.6.0/dist/echarts.min.js" defer></script>
+</head>
+<body>
+<main>
+  <header><div class="eyebrow">REVIEW INSIGHTS / 学习 DEMO</div><h1>亚马逊评论关键词看板</h1><p>从服装评论中发现高频词，快速了解顾客的好评与差评倾向。</p></header>
+  <section class="panel" aria-label="上传评论">
+    <form id="upload-form"><label for="file">上传文件</label><input id="file" type="file" accept=".csv,.xlsx" required><button id="submit" type="submit">分析评论</button></form>
+    <p class="note">支持 CSV / Excel · 自动合并所有 sheet · 智能识别好评 / 差评 / 评论类列 · 最多 2 MB / 合计 10000 行。CSV 使用 UTF-8；可上传 sample_reviews.csv 或 sample_reviews.xlsx。</p>
+    <p id="status" role="status" aria-live="polite">等待上传，开始你的第一次评论分析。</p>
+  </section>
+  <section class="stats" aria-label="分析统计">
+    <div class="stat"><span>有效评论语料</span><strong id="total">—</strong></div>
+    <div class="stat"><span>好评 <small id="positive-ratio"></small></span><strong class="positive" id="positive">—</strong></div>
+    <div class="stat"><span>差评 <small id="negative-ratio"></small></span><strong class="negative" id="negative">—</strong></div>
+    <div class="stat"><span>中性 / 正负持平</span><strong id="neutral">—</strong></div>
+  </section>
+  <section class="panel"><div class="chart-heading"><h2>Top 20 评论关键词</h2><label>语料分类 <select id="corpus"><option value="top_words">全部语料</option><option value="positive_top_words">好评 Top20</option><option value="negative_top_words">差评 Top20</option></select></label></div><p class="note">jieba 分词 · 英文统一小写 · 过滤中英文停用词与标点</p><div id="chart" role="img" aria-label="评论关键词词频柱状图"><div class="empty">上传文件后，词频图表将在这里显示。</div></div></section>
+  <section class="panel"><h2>工作表贡献明细</h2><p class="note">每个非空评论单元格为一条语料，同一行可贡献多条。有效行数按实际贡献语料的原始行计数。未贡献的 sheet 也会列出原因。</p><div class="table-wrap"><table><thead><tr><th>Sheet</th><th>有效行</th><th>语料数</th><th>好评</th><th>差评</th><th>中性</th><th>识别列 / 状态</th></tr></thead><tbody id="sheets"><tr><td colspan="7">等待上传</td></tr></tbody></table></div></section>
+  <p class="note">逐 sheet 分类：存在好评/差评专用列时，非空文本直接归类；通用列仅补充中性，其他通用文本不重复计数。只有通用列时，按正负关键词命中数分类，持平记中性。占比分母为好评 + 差评 + 中性语料数；需求列不参与情感统计。规则不理解否定或反讽。</p>
+</main>
+<script>
+  const form = document.querySelector('#upload-form');
+  const status = document.querySelector('#status');
+  const submit = document.querySelector('#submit');
+  let chart;
+  let result;
+  const corpus = document.getElementById('corpus');
+  function renderChart() {
+    if (!result) return;
+    if (chart) { chart.dispose(); chart = undefined; }
+    const container = document.getElementById('chart');
+    container.textContent = '';
+    const words = result[corpus.value];
+    if (!words.length) { container.textContent = '此类语料过滤后没有可展示的关键词。'; return; }
+    if (!window.echarts) {
+      container.textContent = '图表 CDN 加载失败，请联网刷新。词频结果：' + words.map(item => `${item.word} (${item.count})`).join('、');
+      return;
+    }
+    chart = echarts.init(container);
+    chart.setOption({
+      tooltip: {trigger:'axis', renderMode:'richText'},
+      grid: {left:20,right:32,top:12,bottom:24,containLabel:true},
+      xAxis: {type:'value',minInterval:1},
+      yAxis: {type:'category',inverse:true,data:words.map(item => item.word)},
+      series: [{type:'bar',data:words.map(item => item.count),barMaxWidth:16,itemStyle:{color:corpus.value === 'positive_top_words' ? '#168361' : corpus.value === 'negative_top_words' ? '#cd5050' : '#4869db',borderRadius:[0,4,4,0]}}]
+    });
+  }
+  corpus.addEventListener('change', renderChart);
+  function renderSheets(sheets) {
+    const body = document.getElementById('sheets');
+    body.replaceChildren();
+    const names = {positive:'好评',negative:'差评',general:'通用',requirement:'需求'};
+    for (const sheet of sheets) {
+      const row = document.createElement('tr');
+      const matched = Object.entries(sheet.recognized_columns).filter(([, columns]) => columns.length).map(([role, columns]) => `${names[role]}：${columns.join('、')}`).join('；');
+      const detail = [matched, sheet.skipped_reason, sheet.ignored_general ? `未重复计入通用语料 ${sheet.ignored_general} 条` : ''].filter(Boolean).join('；');
+      for (const value of [sheet.source_sheet, sheet.valid_rows, sheet.total, sheet.positive, sheet.negative, sheet.neutral, detail]) {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        row.appendChild(cell);
+      }
+      body.appendChild(row);
+    }
+  }
+  function resetResults() {
+    result = undefined;
+    document.getElementById('sheets').replaceChildren();
+    for (const key of ['total', 'positive', 'negative', 'neutral']) document.getElementById(key).textContent = '—';
+    document.getElementById('positive-ratio').textContent = '';
+    document.getElementById('negative-ratio').textContent = '';
+    if (chart) { chart.dispose(); chart = undefined; }
+    document.getElementById('chart').textContent = '';
+  }
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const file = document.querySelector('#file').files[0];
+    if (!file) return;
+    resetResults();
+    status.dataset.error = 'false';
+    if (file.size > 2 * 1024 * 1024) { status.textContent = '文件不能超过 2 MB。'; status.dataset.error = 'true'; return; }
+    submit.disabled = true;
+    status.textContent = '正在分词与分析…';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const body = new FormData();
+      body.append('file', file);
+      const response = await fetch('/api/analyze', { method: 'POST', body, signal: controller.signal });
+      const data = await response.json();
+      if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : '上传失败，请检查 CSV / Excel 格式。');
+      for (const key of ['total', 'positive', 'negative', 'neutral']) document.getElementById(key).textContent = data[key];
+      document.getElementById('positive-ratio').textContent = `${(data.positive_ratio * 100).toFixed(1)}%`;
+      document.getElementById('negative-ratio').textContent = `${(data.negative_ratio * 100).toFixed(1)}%`;
+      status.textContent = `分析完成：读取 ${data.sheets.length} 个 sheet，${data.valid_rows} 个有效行，共 ${data.total} 条评论语料。`;
+      result = data;
+      renderSheets(data.sheets);
+      renderChart();
+    } catch (error) {
+      status.dataset.error = 'true';
+      status.textContent = error.name === 'AbortError' ? '分析超时，请减少评论数量后重试。' : error.message;
+    } finally { clearTimeout(timer); submit.disabled = false; }
+  });
+  window.addEventListener('resize', () => chart?.resize());
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+"""Amazon review dashboard application."""

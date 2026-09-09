@@ -1,0 +1,19 @@
+# 构建镜像时排除这些，减小体积、避免污染
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.env
+*.log
+.git/
+.codex/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# 运行时不需要测试代码
+tests/

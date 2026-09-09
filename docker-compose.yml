@@ -1,0 +1,8 @@
+services:
+  web:
+    build: .
+    image: review-insight-demo:latest
+    container_name: review-insight
+    ports:
+      - "8900:8900"      # 宿主机 8900（安全组已放行）: 容器 8900（与 Dockerfile 的 uvicorn --port 一致）
+    restart: always       # 服务器重启 / 容器异常退出后自动拉起
